@@ -18,7 +18,7 @@ def generate_file_hash(file_path):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
     except IOError as e:
-        print(f'❌ ERROR: Fallo al leer el archivo para auditar: {e}')
+        print(f'ERROR: Fallo al leer el archivo para auditar: {e}')
         return None
 
 
@@ -35,54 +35,55 @@ def extract_dataset_metadata(file_path):
 
 
 def audit_data():
-    """Audita el archivo CSV en data/raw y crea o verifica metadata.json."""
+    """Audita todos los archivos CSV en data/raw y gestiona sus hashes."""
     try:
         raw_dir = Path('data/raw')
         csv_files = list(raw_dir.glob('*.csv'))
-
-        if not csv_files:
-            print('❌ ERROR: No se encontró ningún archivo .csv en data/raw/')
-            return False
-
-        target_file = csv_files[0]
         metadata_path = raw_dir / 'metadata.json'
 
-        print(f'Auditando el archivo: {target_file.name}')
-        calculated_hash = generate_file_hash(target_file)
-        if not calculated_hash:
+        if not csv_files:
+            print('ERROR: No se encontraron archivos .csv')
             return False
 
-        dataset_metadata = extract_dataset_metadata(target_file)
+        current_audit = {}
+        all_match = True
+
+        for file_path in csv_files:
+            print(f'Auditando: {file_path.name}...')
+            f_hash = generate_file_hash(file_path)
+            meta = extract_dataset_metadata(file_path)
+            
+            current_audit[file_path.name] = {
+                'hash_sha256': f_hash,
+                'rows': meta['rows'],
+                'cols': meta['columns']
+            }
 
         if metadata_path.exists():
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 saved_metadata = json.load(f)
 
-            if saved_metadata.get('hash_sha256') == calculated_hash:
-                print('SUCCESS: Data integrity verified. File has not been altered.')
-                return True
-            else:
-                print('CRITICAL ERROR: Hash mismatch. The dataset has been modified or corrupted.')
-                print(f'  - hash en disco: {calculated_hash}')
-                print(f'  - hash en metadata: {saved_metadata.get("hash_sha256")}')
-                return False
+            # Verificar cada archivo guardado contra el actual
+            for filename, data in current_audit.items():
+                if filename not in saved_metadata:
+                    print(f'{filename} no estaba en la auditoría anterior.')
+                    all_match = False
+                    continue
+                
+                if saved_metadata[filename]['hash_sha256'] != data['hash_sha256']:
+                    print(f'Hash mismatch en {filename}!')
+                    all_match = False
+            
+            if all_match:
+                print('Integridad total verificada.')
+            return all_match
         else:
-            new_metadata = {
-                'file': dataset_metadata['file'],
-                'hash_sha256': calculated_hash,
-                'rows': dataset_metadata['rows'],
-                'columns': dataset_metadata['columns'],
-                'column_names': dataset_metadata['column_names'],
-                'missing_counts': dataset_metadata['missing_counts'],
-            }
+            # Si no existe, creamos el registro inicial para todos
             with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(new_metadata, f, indent=4, ensure_ascii=False)
-            print('Metadata inicial creada correctamente. Agrega este archivo al control de versiones.')
+                json.dump(current_audit, f, indent=4)
+            print('Metadata creada para todos los archivos.')
             return True
 
-    except json.JSONDecodeError:
-        print('❌ ERROR: El archivo metadata.json está corrupto y no se puede leer.')
-        return False
     except Exception as e:
-        print(f'❌ UNEXPECTED ERROR during audit: {e}')
+        print(f'ERROR: {e}')
         return False

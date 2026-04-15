@@ -1,110 +1,104 @@
 """
 Módulo de utilidades para el análisis de productos cosméticos.
-
-Este módulo contiene funciones auxiliares para cargar, limpiar y procesar
-el dataset de productos cosméticos.
 """
 
 import pandas as pd
 import numpy as np
+import glob
+import os
 
+def load_all_data(folder_path: str) -> pd.DataFrame:
+    """Busca todos los archivos CSV en la carpeta y los une."""
+    all_files = glob.glob(os.path.join(folder_path, "*.csv"))
+    
+    if not all_files:
+        raise FileNotFoundError(f"No se encontraron archivos CSV en {folder_path}")
+        
+    df_list = []
+    for filename in all_files:
+        try:
+            df = pd.read_csv(filename)
+            df_list.append(df)
+            print(f"Cargado: {filename} - Filas: {len(df)}")
+        except Exception as e:
+            print(f"Error al cargar {filename}: {e}")
+    
+    if not df_list:
+        return pd.DataFrame()
 
-def load_data(filepath: str) -> pd.DataFrame:
-    """
-    Carga el dataset de productos cosméticos desde un archivo CSV.
-
-    Args:
-        filepath (str): Ruta al archivo CSV.
-
-    Returns:
-        pd.DataFrame: DataFrame con los datos cargados.
-
-    Raises:
-        FileNotFoundError: Si el archivo no existe.
-        pd.errors.EmptyDataError: Si el archivo está vacío.
-    """
-    try:
-        df = pd.read_csv(filepath)
-        print(f"Datos cargados exitosamente. Forma: {df.shape}")
-        return df
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Archivo no encontrado: {filepath}")
-    except pd.errors.EmptyDataError:
-        raise pd.errors.EmptyDataError(f"Archivo vacío: {filepath}")
-
+    full_df = pd.concat(df_list, ignore_index=True)
+    print(f"Dataset completo cargado. Total filas: {len(full_df)}")
+    return full_df
 
 def clean_product_type(product_type: pd.Series) -> pd.Series:
-    """
-    Limpia la columna product_type removiendo caracteres no deseados.
-
-    Args:
-        product_type (pd.Series): Serie con los tipos de producto.
-
-    Returns:
-        pd.Series: Serie limpiada.
-    """
-    return product_type.fillna('Unknown').str.replace('\n', '').str.strip()
-
+    """Limpia la columna product_type."""
+    return product_type.fillna('Unknown').astype(str).str.replace('\n', '').str.strip()
 
 def add_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Agrega columnas derivadas al DataFrame.
-
-    Args:
-        df (pd.DataFrame): DataFrame original.
-
-    Returns:
-        pd.DataFrame: DataFrame con columnas adicionales.
-    """
+    """Agrega columnas derivadas al DataFrame."""
     df = df.copy()
-    df['description_length'] = df['description'].str.len()
-    df['has_image'] = df['img'].notna()
-    df['has_shade_image'] = df['shade_img'].notna()
+    # Usamos .get() y verificamos existencia para evitar errores si la columna no existe
+    if 'description' in df.columns:
+        df['description_length'] = df['description'].str.len()
+    if 'img' in df.columns:
+        df['has_image'] = df['img'].notna()
+    if 'shade_img' in df.columns:
+        df['has_shade_image'] = df['shade_img'].notna()
     return df
 
-
 def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Realiza la limpieza completa del dataset.
-
-    Args:
-        df (pd.DataFrame): DataFrame original.
-
-    Returns:
-        pd.DataFrame: DataFrame limpio.
-    """
+    """Realiza la limpieza completa del dataset."""
     df_clean = df.copy()
-    df_clean['product_type'] = clean_product_type(df_clean['product_type'])
+    
+    # 1. Normalizar nombres de columnas a minúsculas
+    df_clean.columns = [col.strip().lower() for col in df_clean.columns]
+    
+    # 2. Aplicar limpieza de tipo de producto
+    if 'product_type' in df_clean.columns:
+        df_clean['product_type'] = clean_product_type(df_clean['product_type'])
+    
+    # 3. Agregar columnas derivadas
     df_clean = add_derived_columns(df_clean)
-    # Eliminar columnas no útiles
+    
+    # 4. Eliminar columnas no útiles si existen
     columns_to_drop = ['rating', 'dupes', 'price_site']
     df_clean = df_clean.drop(columns=[col for col in columns_to_drop if col in df_clean.columns])
+    
     return df_clean
 
-
 def validate_dataset(df: pd.DataFrame) -> dict:
-    """
-    Valida la integridad del dataset.
-
-    Args:
-        df (pd.DataFrame): DataFrame a validar.
-
-    Returns:
-        dict: Diccionario con métricas de validación.
-    """
+    """Valida la integridad del dataset."""
+    # Como normalizamos a minúsculas, buscamos 'id' en lugar de 'ID'
+    id_col = 'id' if 'id' in df.columns else ('ID' if 'ID' in df.columns else None)
+    
     validation = {
         'shape': df.shape,
         'duplicates': df.duplicated().sum(),
-        'unique_ids': df['ID'].nunique() if 'ID' in df.columns else None,
+        'unique_ids': df[id_col].nunique() if id_col else "No ID column found",
         'null_counts': df.isnull().sum().to_dict()
     }
     return validation
 
-
 if __name__ == "__main__":
-    # Ejemplo de uso
-    data_path = "../data/products.csv"
-    df = load_data(data_path)
-    df_clean = clean_dataset(df)
-    validation = validate_dataset(df_clean)
-    print("Validación:", validation)
+    # Ruta a los archivos cargados con Git LFS
+    data_folder = "data/raw/" 
+    
+    try:
+        # 1. Cargar
+        df_raw = load_all_data(data_folder)
+        
+        if not df_raw.empty:
+            # 2. Limpiar
+            df_final = clean_dataset(df_raw)
+            
+            # 3. Validar
+            resumen = validate_dataset(df_final)
+            
+            print("\n--- Resumen de Validación ---")
+            print(f"Filas y Columnas: {resumen['shape']}")
+            print(f"Duplicados: {resumen['duplicates']}")
+            print(f"IDs únicos: {resumen['unique_ids']}")
+            # print("Nulos por columna:", resumen['null_counts'])
+            
+    except Exception as e:
+        print(f"Error crítico: {e}")
