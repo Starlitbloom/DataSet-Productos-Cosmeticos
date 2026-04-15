@@ -1,126 +1,144 @@
-# Informe Técnico: Análisis y Limpieza del Dataset de Productos Cosméticos
+# Informe Técnico: Análisis y Limpieza del Dataset Reseñas de productos y cuidado de la piel de Sephora
 
-**Fecha:** Abril 2, 2026  
-**Autor:** Asistente de Programación  
+**Fecha:** Abril 15, 2026  
+**Autoras:** Maria Calfileo, Rocio Cruces, Keiny Navarro
 **Versión:** 1.0  
 
 ## Resumen Ejecutivo
 
-Este informe presenta el análisis exploratorio, limpieza y transformación del dataset de productos cosméticos obtenido de Kaggle. El dataset contiene información sobre más de 10,000 productos cosméticos, incluyendo marcas, nombres, tipos, descripciones e imágenes. El objetivo principal fue caracterizar el dataset, identificar problemas de calidad de datos y aplicar técnicas de limpieza para obtener un conjunto de datos utilizable para análisis posteriores.
+Este informe presenta el análisis exploratorio, limpieza y transformación del dataset de reseñas de productos de cuidado de la piel de Sephora, obtenido en Kaggle. El dataset contiene multiple información sobre productos cosméticos, incluyendo marcas, nombres, tipos, descripciones e imágenes y sus reseñas. El proceso de preparación de datos incluyó la unificación de múltiples fuentes, eliminación de duplicados, tratamiento de valores nulos y valores inconsistentes, estandarización de variables textuales, codificación de variables categóricas y escalamiento de variables numéricas mediante un pipeline de machine learning reproducible.
 
-Los resultados clave incluyen la eliminación de columnas con datos mayoritariamente faltantes, la limpieza de categorías de productos y la adición de métricas derivadas. El dataset final contiene 10,667 registros únicos con integridad verificada.
+El dataset final resultante está estructurado y optimizado para tareas de modelado predictivo, específicamente para la predicción de la probabilidad de recomendación de productos a partir de características del usuario y del producto.
 
 ## Análisis Exploratorio Inicial
 
 ### Estadísticas Descriptivas
 
-- **Tamaño del dataset:** 10,667 filas × 11 columnas
+- **Tamaño del dataset:** 6 filas × 122 columnas
 - **Columnas principales:**
-  - ID: Identificador único (entero)
-  - brand: Marca del producto (string)
-  - name: Nombre del producto (string)
-  - product_type: Tipo de producto (string, con algunos valores nulos)
-  - img: URL de imagen principal (string, 89% nulos)
-  - rating: Calificación (float, 100% nulos)
-  - dupes: Información de duplicados (float, 100% nulos)
-  - description: Descripción del producto (string)
-  - shade_img: URL de imagen de tono (string, 39% nulos)
-  - price_site: Información de precios y sitios (string, 100% nulos)
-  - view_count: Número de vistas (entero, mayoritariamente 0)
+  - price_usd: Precio del producto (numérico continuo)
+  - rating: Calificación otorgada al producto (escala numérica)
+  - helpfulness: Nivel de utilidad de la reseña
+  - total_feedback_count: Total de interacciones en la reseña
+  - total_pos_feedback_count: Número de comentarios positivos
+  - total_neg_feedback_count: Número de comentarios negativos
+
+  - **Variables categóricas:**
+  - brand_name: Marca del producto
+  - skin_type: Tipo de piel del usuario
+  - eye_color: Color de ojos
+  - hair_color: Color de cabello
 
 ### Caracterización del Dataset
 
-- **Distribución de view_count:** La mayoría de productos tienen 0 vistas (media: 0.001, máximo: 12)
-- **Longitud de descripciones:** Varía de 5 a 3,233 caracteres (media: 264)
-- **Tipos de producto:** 132 categorías únicas, siendo las más comunes: Powder (1,005), Face (960), Liquid (939)
-- **Marcas principales:** e.l.f. (526), MAC (522), Sephora (513), BH Cosmetics (391)
+- **Distribución de recomendaciones:** La variable objetivo is_recommended presenta un comportamiento desbalanceado, con predominancia de valores positivos (recomendación).
+- **Distribución de ratings:** Los valores de rating se concentran en el rango alto, indicando una tendencia general a evaluaciones positivas de los productos.
+- **Frecuencia de marcas:** Las marcas más representadas en el dataset corresponden a aquellas con mayor volumen de reseñas, destacando e.l.f., MAC, Sephora y otras marcas de alta rotación
+- **Variables demográficas:** Las características del usuario, como tipo de piel, color de ojos y color de cabello, presentan distribuciones heterogéneas, siendo skin_type la variable más influyente en la segmentación del dataset.
+- **Nivel de detalle:** El dataset se encuentra a nivel de interacción usuario-producto, lo que genera múltiples registros por producto debido a la existencia de múltiples reseñas.
 
 ### Visualizaciones Iniciales
 
 Se generaron histogramas y gráficos de barras para visualizar:
-- Distribución de view_count (concentrada en 0)
-- Frecuencia de tipos de producto
-- Frecuencia de marcas
+- Distribución de ratings
+- Distribución de la variable objetivo (is_recommended)
+- Distribución de precios (price_usd)
+- Frecuencia de marcas:
+- Distribución de variables del usuario
+
 
 ## Metodología de Transformación
 
 ### Técnicas Aplicadas
 
-1. **Limpieza de texto en product_type:**
-   - Remoción de caracteres de nueva línea (`\n`)
-   - Eliminación de espacios en blanco
-   - Manejo de valores nulos asignando 'Unknown'
+1. **Limpieza y preparación de datos:**
+   - Eliminación de valores duplicados a nivel de interacción usuario-producto
+   - Estandarización de valores inconsistentes en variables categóricas
+   - Conversión de valores no válidos a nulos (NaN) para su posterior imputación
 
-2. **Eliminación de columnas no útiles:**
-   - `rating`: 100% valores nulos
-   - `dupes`: 100% valores nulos
-   - `price_site`: 100% valores nulos
+2. **Tratamiento de valores faltantes:**
+   - Imputación de variables numéricas mediante mediana
+   - Imputación de variables categóricas mediante moda
+   - Eliminación de columnas con alto porcentaje de valores faltantes (≥90%)
 
-3. **Adición de columnas derivadas:**
-   - `description_length`: Longitud de la descripción en caracteres
-   - `has_image`: Booleano indicando presencia de imagen principal
-   - `has_shade_image`: Booleano indicando presencia de imagen de tono
+3. **Transformación de variables:**
+   - Escalamiento de variables numéricas mediante StandardScaler
+   - Codificación de variables categóricas mediante One-Hot Encoding
+   - Tratamiento de valores atípicos mediante método IQR (capping)
 
-4. **Validación de integridad:**
-   - Verificación de duplicados (0 encontrados)
-   - Confirmación de unicidad de IDs (10,667 únicos)
+4. **Ingeniería de datos:**
+   - Unificación de múltiples fuentes de datos (productos y reseñas)
+   - Estandarización de nombres de columnas tras merge
+   - Conversión de variables de texto a formato consistente (minúsculas, limpieza básica)
+
+5. **Validación de datos:**
+   - Verificación de integridad del dataset final
+   - Confirmación de estructura consistente para entrenamiento de modelos
+   - Preparación del dataset para tareas de clasificación supervisada
 
 ### Justificaciones de Decisiones
 
-- **Eliminación de columnas nulas:** Las columnas con 100% de valores faltantes no aportan información útil y podrían causar errores en análisis posteriores.
-- **Limpieza de product_type:** Los caracteres `\n` parecen ser artefactos de scraping, su remoción mejora la legibilidad y consistencia.
-- **Columnas derivadas:** Proporcionan métricas adicionales para análisis, como evaluar la completitud de imágenes o la verbosidad de descripciones.
-- **Manejo de nulos:** Para product_type, se optó por 'Unknown' en lugar de eliminación para preservar el tamaño del dataset.
+- **Eliminación de columnas con alta proporción de valores faltantes:** Se eliminaron variables con más del 90% de valores nulos para evitar ruido y reducir dimensionalidad sin pérdida significativa de información.
+- **Estandarización de variables categóricas:** Se aplicó limpieza de texto para asegurar consistencia en variables como marcas y características del usuario, reduciendo variaciones innecesarias en los datos.
+- **Tratamiento de valores nulos:** Se aplicaron estrategias diferenciadas según el tipo de variable:
+   - Mediana para variables numéricas
+   - Moda para variables categóricas
+- **Eliminación de duplicados:** Se eliminaron registros duplicados a nivel de interacción usuario-producto para evitar sesgos en el entrenamiento del modelo.
+- **Codificación y escalamiento:** Se aplicaron técnicas de transformación para convertir variables categóricas en numéricas (One-Hot Encoding) y estandarizar variables numéricas (StandardScaler), asegurando compatibilidad con modelos de machine learning.
 
 ## Resultados y Validación
 
 ### Dataset Transformado
 
-- **Tamaño final:** 10,667 filas × 11 columnas
-- **Columnas finales:** ID, brand, name, product_type, img, description, shade_img, view_count, description_length, has_image, has_shade_image
+- **Tamaño final:** 1097385 filas × 43 columnas
+- **Columnas finales:** price_usd, rating, helpfulness, total_feedback_count, total_neg_feedback_count, total_pos_feedback_count, brand_name, skin_type, eye_color, hair_color (más variables categóricas generadas por One-Hot Encoding)
 - **Valores nulos restantes:**
-  - img: 9,473 (89%)
-  - shade_img: 4,120 (39%)
-  - Otras columnas: 0 nulos
+  El dataset final no presenta valores nulos tras el proceso de imputación, ya que:
+  - Las variables numéricas fueron imputadas con la mediana
+  - Las variables categóricas fueron imputadas con la moda
+  - Las columnas con más del 90% de valores nulos fueron eliminadas previamente
 
 ### Evidencia de Efectividad
 
-- **Integridad verificada:** No hay filas duplicadas, todos los IDs son únicos
-- **Consistencia mejorada:** product_type limpio y estandarizado
-- **Métricas adicionales:** Nuevas columnas proporcionan insights sobre completitud de datos
-- **Archivo de salida:** Dataset limpio guardado como `products_cleaned.csv`
+- **Integridad verificada:** No se detectaron registros duplicados tras la unificación y limpieza del dataset.
+- **Consistencia mejorada:** Las variables categóricas fueron estandarizadas mediante limpieza de texto y normalización de valores.
+- **Métricas adicionales:** Se eliminaron columnas con alto porcentaje de valores nulos, mejorando la calidad del dataset para modelamiento.
+- **Archivo de salida:** El conjunto de datos procesado fue guardado en formato optimizado para análisis y entrenamiento de modelos.
+
 
 ### Validación de Calidad
 
-- **Completitud:** Columnas críticas (ID, brand, name, description) 100% completas
-- **Exactitud:** Tipos de datos apropiados, texto limpio
-- **Consistencia:** Formato uniforme en product_type
-- **Unicidad:** Sin duplicados detectados
+- **Completitud:** Las variables críticas del modelo fueron completadas mediante estrategias de imputación (mediana para numéricas y moda para categóricas).
+- **Exactitud:** Los tipos de datos fueron corregidos y estandarizados.
+- **Consistencia:** Las variables categóricas fueron normalizadas y codificadas .
+- **Unicidad:** Se eliminó la presencia de duplicados .
 
 ## Conclusiones y Recomendaciones
 
 ### Reflexión Final
 
-El proceso de limpieza transformó un dataset con problemas de calidad (alta proporción de nulos, datos inconsistentes) en un conjunto de datos limpio y analizable. Las decisiones tomadas se basaron en mantener la máxima información útil mientras se eliminaba ruido. La modularidad del código permite reutilización y mantenimiento futuro.
+El proceso de preprocesamiento permitió transformar un dataset con problemas de calidad de datos (valores nulos, inconsistencias en variables categóricas y diferencias de escala entre variables numéricas) en un conjunto de datos completamente preparado para modelamiento.
+Las decisiones metodológicas se orientaron a preservar la mayor cantidad de información útil, eliminando únicamente variables redundantes o con alta proporción de valores faltantes.
+La estructura modular del pipeline implementado permite su reutilización, escalabilidad y mantenimiento en futuros proyectos de análisis de datos o machine learning.
 
 ### Dificultades Encontradas
 
-- Alta proporción de valores nulos en columnas de imágenes y precios
-- Formato inconsistente en product_type debido a scraping
-- Falta de datos en rating y dupes, lo que limita análisis de popularidad
+- Presencia de valores nulos en múltiples variables numéricas y categóricas, lo que requirió estrategias diferenciadas de imputación.
+- Inconsistencias en variables categóricas, especialmente en nombres de marcas y atributos del usuario, lo que requirió normalización de texto.
+- Diferencias de escala entre variables numéricas, lo que hizo necesario el uso de estandarización para evitar sesgos en el modelo.
 
 ### Sugerencias
 
-1. **Mejora del dataset original:** Considerar fuentes alternativas con mejor completitud de datos
-2. **Análisis adicional:** Explorar procesamiento de lenguaje natural en descripciones para extracción de características
-3. **Enriquecimiento:** Intentar recuperar información de precios desde URLs o APIs externas
-4. **Automatización:** Desarrollar pipelines para limpieza automática en futuros datasets similares
+1. **Mejora del dataset original:** CSe recomienda trabajar con fuentes de datos más completas o actualizadas, con menor proporción de valores faltantes, para reducir la necesidad de imputación intensiva.
+2. **Análisis adicional:** Explorar otros algoritmos de machine learning como Gradient Boosting o XGBoost para mejorar el desempeño predictivo.
+3. **Enriquecimiento:** Evaluar la creación de nuevas variables derivadas a partir de las existentes (por ejemplo, ratios entre métricas de interacción) para enriquecer el poder predictivo del modelo.
+4. **Automatización:** Mantener el pipeline modular permite su reutilización en futuros proyectos, facilitando la automatización del proceso de limpieza y preprocesamiento de datos.
 
 ### Archivos Generados
 
-- `notebooks/analisis_cosmeticos.ipynb`: Notebook completo con análisis y visualizaciones
-- `data/products_cleaned.csv`: Dataset procesado
-- `src/utils.py`: Funciones auxiliares reutilizables
-- `outputs/`: Visualizaciones generadas (integradas en notebook)
+- `notebooks/analisis_reseñas.ipynb`: Notebook completo con análisis, limpieza y modelamiento del dataset.
+- `data/sephora_limpio.csv`: Dataset procesado listo para modelamiento.
+- `src/transformers.py`: Implementación de transformadores personalizados reutilizables.
+- `outputs/`: Resultados, métricas y visualizaciones generadas durante el análisis.
 
-Este trabajo cumple con los requisitos de organización, calidad de análisis y buenas prácticas de codificación, proporcionando una base sólida para análisis posteriores de productos cosméticos.
+Este trabajo cumple con los requisitos de organización, calidad de análisis y buenas prácticas de codificación, proporcionando una base sólida para análisis posteriores de productos de Sephora.

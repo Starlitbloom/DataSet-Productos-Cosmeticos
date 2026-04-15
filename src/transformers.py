@@ -21,6 +21,9 @@ class DropColumnsTransformer(BaseEstimator, TransformerMixin):
         X_copy = X.copy()
         cols = [col for col in self.columns_to_drop if col in X_copy.columns]
         return X_copy.drop(columns=cols)
+    
+    def set_output(self, transform=None):
+        return self
 
 
 class UnknownToNaNTransformer(BaseEstimator, TransformerMixin):
@@ -32,6 +35,9 @@ class UnknownToNaNTransformer(BaseEstimator, TransformerMixin):
         X_copy = X.copy()
         X_copy = X_copy.replace(r'^\s*unknown\s*$', np.nan, regex=True)
         return X_copy
+    
+    def set_output(self, transform=None):
+        return self
 
 
 class StringCleanerTransformer(BaseEstimator, TransformerMixin):
@@ -51,6 +57,9 @@ class StringCleanerTransformer(BaseEstimator, TransformerMixin):
                 .replace('', pd.NA)
             )
         return X_copy
+    
+    def set_output(self, transform=None):
+        return self
 
 
 class DropHighMissingTransformer(BaseEstimator, TransformerMixin):
@@ -68,6 +77,9 @@ class DropHighMissingTransformer(BaseEstimator, TransformerMixin):
         X_copy = X.copy()
         cols = [c for c in self.cols_to_drop_ if c in X_copy.columns]
         return X_copy.drop(columns=cols)
+    
+    def set_output(self, transform=None):
+        return self
 
 
 class OutlierCapper(BaseEstimator, TransformerMixin):
@@ -99,6 +111,9 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
 
     def get_feature_names_out(self, input_features=None):
         return input_features
+    
+    def set_output(self, transform=None):
+        return self
 
 
 class DropZeroVarianceTransformer(BaseEstimator, TransformerMixin):
@@ -126,6 +141,8 @@ class DropZeroVarianceTransformer(BaseEstimator, TransformerMixin):
             return None
         return np.array([f for f in input_features if f not in self.cols_to_drop_])
 
+    def set_output(self, transform=None):
+        return self
 
 class SmartImputerTransformer(BaseEstimator, TransformerMixin):
     """
@@ -173,3 +190,6 @@ class SmartImputerTransformer(BaseEstimator, TransformerMixin):
 
     def get_feature_names_out(self, input_features=None):
         return input_features
+    
+    def set_output(self, transform=None):
+        return self
