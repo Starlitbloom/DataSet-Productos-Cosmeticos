@@ -1,42 +1,40 @@
-import pandas as pd
+"""
+Pipeline configuration for cosmetics dataset.
+Maintains the use of 'set_output(transform="pandas")' for DataFrame output.
+"""
+
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.feature_selection import VarianceThreshold
 
-# Asegurarse que la ruta de importación sea correcta según la estructura
 from src.transformers import (
-    DropColumnsTransformer,
-    UnknownToNaNTransformer,
-    StringCleanerTransformer,
-    DropHighMissingTransformer,
-    SmartImputerTransformer,
-    OutlierCapper,
-    DropZeroVarianceTransformer
+    DropColumnsTransformer, UnknownToNaNTransformer, StringCleanerTransformer,
+    DropHighMissingTransformer, SmartImputerTransformer, OutlierCapper
 )
 
 def build_preprocessing_pipeline(columns_to_drop=None):
-    # Ajustamos a minúsculas para ser consistentes con la limpieza previa
+    """Builds and returns the scikit-learn preprocessing pipeline."""
     default_drop = ['id', 'img', 'name', 'description', 'shade_img', 'dupes', 'price_site']
     
     if columns_to_drop is None:
         columns_to_drop = default_drop
     else:
-        # Unimos ambas listas asegurando minúsculas
         columns_to_drop = list(set([c.lower() for c in default_drop + list(columns_to_drop)]))
 
-    # Pipeline para datos numéricos
+    # Ruta para variables numéricas (con herramienta nativa para varianza cero)
     num_pipe = Pipeline([
         ('capper', OutlierCapper(apply_capping=True)),
-        ('zero_variance', DropZeroVarianceTransformer()),
+        ('zero_variance', VarianceThreshold(threshold=0.0)),
         ('scaler', StandardScaler())
     ])
 
-    # Pipeline para datos categóricos
+    # Ruta para variables categóricas
     cat_pipe = Pipeline([
         ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
     ])
 
-    # Transformador por columnas
+    # Enrutador dinámico
     preprocessor = ColumnTransformer(
         transformers=[
             ('num', num_pipe, make_column_selector(dtype_include='number')),
@@ -45,7 +43,7 @@ def build_preprocessing_pipeline(columns_to_drop=None):
         remainder='drop'
     )
 
-    # Pipeline Principal
+    # Pipeline principal
     full_pipeline = Pipeline([
         ('drop_leaks', DropColumnsTransformer(columns_to_drop=columns_to_drop)),
         ('clean_strings', StringCleanerTransformer()),
@@ -55,18 +53,7 @@ def build_preprocessing_pipeline(columns_to_drop=None):
         ('preprocessing', preprocessor)
     ])
 
-    # Mantiene el formato DataFrame de Pandas
+    # ¡EL SÚPER PODER DEL GRUPO 8! Mantiene el formato de Pandas automáticamente
     full_pipeline.set_output(transform="pandas")
 
     return full_pipeline
-
-def run_pipeline(df, columns_to_drop=None):
-    # Antes de entrar al pipeline, normalizamos nombres de columnas
-    df_copy = df.copy()
-    df_copy.columns = [c.strip().lower() for c in df_copy.columns]
-    
-    pipeline = build_preprocessing_pipeline(columns_to_drop=columns_to_drop)
-    
-    if isinstance(df_copy, pd.DataFrame):
-        return pipeline.fit_transform(df_copy)
-    raise ValueError('Input debe ser un pandas DataFrame')

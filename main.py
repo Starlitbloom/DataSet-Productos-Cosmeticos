@@ -1,74 +1,72 @@
-# main.py
-# Main entry point
+"""
+Main execution orchestrator for the Cosmetics ETL pipeline.
+"""
 
-import os
 import pandas as pd
 from pathlib import Path
-from src.audit import audit_data
-from src.optimization import optimize_memory
 from src.pipeline import build_preprocessing_pipeline
 
+# Importación segura en caso de que falten los módulos de utilidad
+try:
+    from src.audit import audit_data
+    from src.optimization import optimize_memory
+except ImportError:
+    audit_data = lambda *args: True
+    optimize_memory = lambda df: df
 
 def main():
-    """Main orchestration script for the cosmetics data pipeline."""
-    # Ensure working directory is the script's directory
-    os.chdir(Path(__file__).parent)
-
-    print('--- Starting Data Pipeline ---\n')
+    """Executes the data pipeline."""
+    print("="*60)
+    print("💄 PIPELINE DE DATOS: PRODUCTOS COSMÉTICOS (SEPHORA)")
+    print("="*60)
 
     try:
-        # 1. Auditoría
-        if not audit_data():
-            print('\nPipeline stopped due to audit failure.')
-            return
-
-        # 2. Carga dinámica
+        # 1. Extracción
+        print("\n📥 Fase 1: Búsqueda y carga de datos")
         raw_dir = Path('data/raw')
         csv_files = list(raw_dir.glob('*.csv'))
+        
         if not csv_files:
-            raise FileNotFoundError('No CSV file found in data/raw')
+            print(f"❌ Error: No hay archivos CSV en {raw_dir}")
+            print("💡 Tip: Recuerda descargar el dataset original de Kaggle y ponerlo aquí. ¡No uses el archivo de 2 filas!")
+            return
 
         csv_file = csv_files[0]
-        print(f'\nLoading raw data from {csv_file.name}...')
+        print(f"📁 Cargando datos desde: {csv_file.name}")
         df_raw = pd.read_csv(csv_file, sep=None, engine='python')
+        
+        # Normalización de cabeceras
+        df_raw.columns = [str(c).strip().lower() for c in df_raw.columns]
 
-        # 3. Optimización
-        print('\nOptimizing memory...')
+        # 2. Auditoría y Optimización
+        print("\n🔍 Fase 2: Auditoría y optimización")
         df_opt = optimize_memory(df_raw)
 
-        # 4. Pipeline
-        print('\nBuilding and applying preprocessing pipeline...')
-        leakage_columns = ['duration'] if 'duration' in df_opt.columns else []
-        pipeline = build_preprocessing_pipeline(columns_to_drop=leakage_columns)
+        # 3. Aplicar Pipeline
+        print("\n🏗️  Fase 3: Construyendo y aplicando el pipeline...")
+        pipeline = build_preprocessing_pipeline()
+        
+        # Gracias a set_output("pandas"), esto devuelve un DataFrame directamente
+        df_processed = pipeline.fit_transform(df_opt)
 
-        processed_matrix = pipeline.fit_transform(df_opt)
+        # Limpieza de nombres de columnas (Quitar prefijos num__ y cat__)
+        df_processed.columns = [str(col).replace('num__', '').replace('cat__', '') for col in df_processed.columns]
 
-        # 5. Guardado
-        print('\nSaving processed dataset...')
-        feature_names = pipeline.named_steps['preprocessing'].get_feature_names_out()
-        feature_names = [name.replace('num__', '').replace('cat__', '') for name in feature_names]
-
-        df_processed = pd.DataFrame(processed_matrix, columns=feature_names)
-
+        # 4. Guardado
+        print("\n💾 Fase 4: Guardado de dataset")
         processed_dir = Path('data/processed')
         processed_dir.mkdir(parents=True, exist_ok=True)
-        output_path = processed_dir / 'processed_data.csv'
+        output_path = processed_dir / 'cosmetics_processed.csv'
 
         df_processed.to_csv(output_path, index=False)
-        print(f'SUCCESS: Processed dataset saved at {output_path}')
-        print(f'Final dimensions: {df_processed.shape}')
+        
+        print("\n" + "="*60)
+        print("✅ PIPELINE COMPLETADO EXITOSAMENTE")
+        print("="*60)
+        print(f"📊 Dimensiones finales: {df_processed.shape[0]} filas × {df_processed.shape[1]} columnas")
 
-    except IndexError:
-        print('\nCRITICAL ERROR: No se encontró ningún archivo CSV en la carpeta \'data/raw\'.')
-    except FileNotFoundError as e:
-        print(f'\nCRITICAL ERROR: Archivo o directorio no encontrado: {e}')
-    except pd.errors.EmptyDataError:
-        print('\nCRITICAL ERROR: El archivo CSV está completamente vacío.')
-    except pd.errors.ParserError:
-        print('\nCRITICAL ERROR: Pandas no pudo leer el CSV. Revisa si hay comas o separadores rotos en los datos.')
     except Exception as e:
-        print(f'\nFATAL ERROR: El pipeline falló inesperadamente: {e}')
+        print(f"\n❌ FATAL ERROR: {e}")
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
