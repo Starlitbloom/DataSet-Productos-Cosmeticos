@@ -5,6 +5,7 @@ funciones para exportar el mejor modelo entrenado, sus métricas y gráficos.
 """
 
 from __future__ import annotations
+from sklearn.model_selection import train_test_split
 
 import glob
 import json
@@ -388,3 +389,45 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error crítico: {e}")
 
+# FUNCIÓN DE INTEGRACIÓN
+
+"""
+Carga dataset y realiza split estratificado.
+
+Se utiliza exclusivamente en fase de modelado para evitar duplicación
+de código en notebooks.
+"""
+def load_and_split_data(
+    filepath: str = "../data/processed/cosmetics_processed.csv",
+    target_col: str = "is_recommended",
+    test_size: float = 0.2,
+    random_state: int = 42
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Carga el dataset procesado y realiza split estratificado Train/Test.
+    """
+
+    import os
+
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"No se encontró el archivo: {filepath}")
+
+    df = pd.read_csv(filepath)
+
+    if target_col not in df.columns:
+        raise ValueError(f"La columna objetivo '{target_col}' no existe en el dataset.")
+
+    df = df.dropna(subset=[target_col]).copy()
+
+    y = df[target_col]
+    X = df.drop(columns=[target_col])
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=y
+    )
+
+    return X_train, X_test, y_train, y_test

@@ -1,84 +1,190 @@
 """
-Main execution orchestrator for the Cosmetics ETL pipeline.
+main.py
+
+Orquestador end-to-end para entrenamiento, optimización y evaluación de un
+modelo Gradient Boosting sobre el dataset Sephora.
+
+Requisitos del pipeline
+------------------------
+1) Carga y split usando `load_and_split_data()`
+2) Entrenamiento del modelo base con `train_gradient_boosting()`
+3) Optimización con `optimize_gradient_boosting()`
+4) Evaluación + guardado de métricas y gráficas en `results/`
+5) Serialización del mejor modelo en:
+   `models/trained_models/mejor_gradient_boosting.pkl`
+
+Convenciones
+------------
+- Docstrings estilo NumPy
+- Type hints
+- Logs claros con separadores visuales
+- Ejecución protegida con `if __name__ == "__main__":`
 """
 
-import pandas as pd
+from __future__ import annotations
+
+import logging
+import os
 from pathlib import Path
-from src.pipeline import build_preprocessing_pipeline
+from typing import Any, Dict, Optional
 
-# Importación segura en caso de que falten los módulos de utilidad
-try:
-    from src.audit import audit_data
-    from src.optimization import optimize_memory
-except ImportError:
-    audit_data = lambda *args: True
-    optimize_memory = lambda df: df
+import joblib
+
+from src.utils import load_and_split_data
+from src.model_training import train_gradient_boosting
+from src.hyperparameter_tuning import optimize_gradient_boosting
+from src.model_evaluation import (
+    evaluate_and_save_metrics,
+    save_classification_report,
+    plot_and_save_confusion_matrix,
+    plot_and_save_roc_curve,
+)
 
 
-def main():
-    """Executes the data pipeline."""
-    
-    print("="*60)
-    print("PIPELINE DE DATOS: PRODUCTOS COSMÉTICOS (SEPHORA)")
-    print("="*60)
+def _setup_logger() -> logging.Logger:
+    """Configura un logger estándar para ejecución de consola.
 
-    try:
-        # 1. Extracción
-        print("\nFase 1: Búsqueda y carga de datos")
-        
-        raw_dir = Path('data/raw')
-        csv_files = list(raw_dir.glob('*.csv'))
+    Returns
+    -------
+    logging.Logger
+        Logger configurado para el módulo principal.
+    """
+    logger = logging.getLogger("cosmetics_main")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
 
-        if not csv_files:
-            print(f"Error: No hay archivos CSV en {raw_dir}")
-            print("Tip: Recuerda descargar el dataset original de Kaggle y ponerlo aquí.")
-            return
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
 
-        csv_file = csv_files[0]
 
-        print(f"Cargando datos desde: {csv_file.name}")
+def _phase(title: str, logger: logging.Logger) -> None:
+    """Imprime un separador visual para delimitar fases.
 
-        df_raw = pd.read_csv(csv_file, sep=None, engine='python')
+    Parameters
+    ----------
+    title : str
+        Texto del título de la fase.
+    logger : logging.Logger
+        Logger para emitir mensajes.
+    """
+    sep = "=" * 50
+    logger.info(sep)
+    logger.info(title)
+    logger.info(sep)
 
-        # Normalización de cabeceras
-        df_raw.columns = [str(c).strip().lower() for c in df_raw.columns]
 
-        # 2. Auditoría y Optimización
-        print("\nFase 2: Auditoría y optimización")
-        df_opt = optimize_memory(df_raw)
+def _get_project_root() -> Path:
+    """Obtiene la raíz del proyecto (directorio conteniendo este main.py)."""
+    return Path(__file__).resolve().parent
 
-        # 3. Aplicar Pipeline
-        print("\nFase 3: Construyendo y aplicando el pipeline...")
 
-        pipeline = build_preprocessing_pipeline()
+def run_pipeline() -> None:
+    """Ejecuta el pipeline end-to-end solicitado."""
+    logger = _setup_logger()
 
-        df_processed = pipeline.fit_transform(df_opt)
+    root = _get_project_root()
+    results_dir = root / "results"
+    models_dir = root / "models" / "trained_models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
-        # Limpieza de nombres
-        df_processed.columns = [
-            str(col).replace('num__', '').replace('cat__', '')
-            for col in df_processed.columns
-        ]
+    model_name = "mejor_gradient_boosting"
+    model_output_path = models_dir / f"{model_name}.pkl"
 
-        # 4. Guardado
-        print("\nFase 4: Guardado de dataset")
+    # =========================
+    # Fase 1: Carga y Split
+    # =========================
+    _phase("Fase 1: Carga y Split de Datos", logger)
 
-        processed_dir = Path('data/processed')
-        processed_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = root / "data" / "processed" / "sephora_limpio.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(f"No se encontró el dataset: {csv_path}")
 
-        output_path = processed_dir / 'cosmetics_processed.csv'
+    X_train, X_test, y_train, y_test = load_and_split_data(
+        filepath=str(csv_path),
+        target_col="is_recommended",
+        test_size=0.2,
+        random_state=42,
+    )
 
-        df_processed.to_csv(output_path, index=False)
+    logger.info("X_train: %s | X_test: %s", getattr(X_train, "shape", None), getattr(X_test, "shape", None))
 
-        print("\n" + "="*60)
-        print("PIPELINE COMPLETADO EXITOSAMENTE")
-        print("="*60)
+    # =========================
+    # Fase 2: Modelo Base
+    # =========================
+    _phase("Fase 2: Entrenamiento del Modelo Base", logger)
 
-        print(f"Dimensiones finales: {df_processed.shape[0]} filas × {df_processed.shape[1]} columnas")
+    base_model = train_gradient_boosting(X_train, y_train)
+    logger.info("Modelo base entrenado: %s", type(base_model).__name__)
 
-    except Exception as e:
-        print(f"\nFATAL ERROR: {e}")
+    # ==========================================
+    # Fase 3: Optimización de Hiperparámetros
+    # ==========================================
+    _phase("Fase 3: Optimización de Hiperparámetros", logger)
+
+    tuning_payload: Dict[str, Any] = optimize_gradient_boosting(X_train, y_train)
+    best_model = tuning_payload["best_model"]
+    best_params = tuning_payload.get("best_params")
+    best_score = tuning_payload.get("best_score")
+
+    logger.info("Mejores params: %s", best_params)
+    logger.info("Mejor score (cv, f1): %s", best_score)
+
+    # =========================
+    # Fase 4: Evaluación y Guardado
+    # =========================
+    _phase("Fase 4: Evaluación y Guardado de Reportes/Gráficas", logger)
+
+    # Métricas (texto + consola)
+    metrics: Dict[str, float] = evaluate_and_save_metrics(
+        model=best_model,
+        X_test=X_test,
+        y_test=y_test,
+        model_name=model_name,
+    )
+
+    logger.info("Métricas principales: %s", metrics)
+
+    # Classification report
+    _ = save_classification_report(
+        model=best_model,
+        X_test=X_test,
+        y_test=y_test,
+        model_name=model_name,
+    )
+    logger.info("Classification report guardado en results/ (según implementación).")
+
+    # Matriz de confusión
+    _ = plot_and_save_confusion_matrix(
+        model=best_model,
+        X_test=X_test,
+        y_test=y_test,
+        model_name=model_name,
+    )
+    logger.info("Matriz de confusión guardada en results/plots/ (PNG).")
+
+    # Curva ROC
+    _ = plot_and_save_roc_curve(
+        model=best_model,
+        X_test=X_test,
+        y_test=y_test,
+        model_name=model_name,
+    )
+    logger.info("Curva ROC guardada en results/plots/ (PNG).")
+
+    # =========================
+    # Fase 5: Serialización
+    # =========================
+    _phase("Fase 5: Serialización del Mejor Modelo", logger)
+
+    joblib.dump(best_model, str(model_output_path), compress=3)
+    logger.info("Modelo guardado en: %s", model_output_path)
+
+    logger.info("%s\nPIPELINE COMPLETADO EXITOSAMENTE\n%s", "=" * 50, "=" * 50)
 
 
 if __name__ == "__main__":
-    main()
+    run_pipeline()

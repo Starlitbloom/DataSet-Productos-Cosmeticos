@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -63,7 +64,15 @@ class UnknownToNaNTransformer(BaseEstimator, TransformerMixin):
     """
 
     def fit(self, X: pd.DataFrame, y: Any = None):
+        def fit(self, X: pd.DataFrame, y=None):
+            """
+            Aprende los parámetros necesarios desde los datos de entrenamiento.
+
+            En este caso no se ajustan parámetros, pero se mantiene
+            compatibilidad con el pipeline de sklearn.
+            """
         return self
+
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X_copy = X.copy()
@@ -101,6 +110,8 @@ class SmartImputerTransformer(BaseEstimator, TransformerMixin):
     def fit(self, X: pd.DataFrame, y: Any = None):
         self.impute_values_ = {}
 
+        # Mediana para variables numéricas
+        # Moda para variables categóricas
         for col in X.columns:
             if pd.api.types.is_numeric_dtype(X[col]):
                 self.impute_values_[col] = X[col].median()
@@ -111,6 +122,17 @@ class SmartImputerTransformer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Elimina columnas especificadas del dataset.
+
+        Parameters
+        ----------
+        X : DataFrame de entrada
+
+        Returns
+        -------
+        DataFrame sin las columnas eliminadas
+        """
         return X.fillna(self.impute_values_)
 
     def set_output(self, transform: str | None = None):
@@ -172,6 +194,7 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
 
         self.bounds_ = {}
         for col in X.select_dtypes(include="number").columns:
+            # Se calculan límites usando IQR para detectar outliers
             q1 = X[col].quantile(0.25)
             q3 = X[col].quantile(0.75)
             iqr = q3 - q1
@@ -192,4 +215,4 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
 
     def set_output(self, transform: str | None = None):
         return self
-
+    
