@@ -1,0 +1,57 @@
+{
+  "best_k": 2,
+  "best_silhouette_score": 0.219987154006958,
+  "final_inertia": 1233025.25,
+  "pca_variance_pc1": 0.12030993402004242,
+  "pca_variance_pc2": 0.10500426590442657,
+  "pca_variance_total_2d": 0.225314199924469,
+  "components_for_90pct": 33,
+  "components_for_95pct": 55,
+  "k_results": [
+    {
+      "k": 2,
+      "inertia": 1240247.5,
+      "silhouette": 0.219987154006958
+    },
+    {
+      "k": 3,
+      "inertia": 1191078.5,
+      "silhouette": 0.11074288189411163
+    },
+    {
+      "k": 4,
+      "inertia": 1106036.75,
+      "silhouette": 0.11295361071825027
+    },
+    {
+      "k": 5,
+      "inertia": 1071514.875,
+      "silhouette": 0.08987779170274734
+    },
+    {
+      "k": 6,
+      "inertia": 1031373.625,
+      "silhouette": 0.061823680996894836
+    },
+    {
+      "k": 7,
+      "inertia": 992190.1875,
+      "silhouette": 0.06675871461629868
+    },
+    {
+      "k": 8,
+      "inertia": 888305.25,
+      "silhouette": 0.1018572747707367
+    },
+    {
+      "k": 9,
+      "inertia": 871767.4375,
+      "silhouette": 0.1031470000743866
+    },
+    {
+      "k": 10,
+      "inertia": 841424.375,
+      "silhouette": 0.10164592415094376
+    }
+  ]
+}
