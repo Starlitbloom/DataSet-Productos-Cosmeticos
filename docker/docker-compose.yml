@@ -1,0 +1,66 @@
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Base de datos PostgreSQL (Fuente 3 del ETL y Data Warehouse)
+  # ─────────────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine          # Alpine = imagen más liviana
+    container_name: sephora_db
+    restart: unless-stopped            # Reinicia automáticamente si falla
+
+    # Credenciales desde archivo .env (nunca hardcodeadas)
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB}
+
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"  # Accesible desde localhost para desarrollo
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # Persistencia entre reinicios del contenedor
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # API FastAPI  (se agrega en Semana 3 — descomentado cuando esté listo)
+  # ─────────────────────────────────────────────────────────────────────────
+  # api:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.api
+  #   container_name: sephora_api
+  #   restart: unless-stopped
+  #   env_file: ../.env
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Dashboard Streamlit  (se agrega en Semana 3 — descomentado cuando esté listo)
+  # ─────────────────────────────────────────────────────────────────────────
+  # dashboard:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.dashboard
+  #   container_name: sephora_dashboard
+  #   restart: unless-stopped
+  #   env_file: ../.env
+  #   ports:
+  #     - "8501:8501"
+  #   depends_on:
+  #     - api
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Volúmenes nombrados (los gestiona Docker, persisten entre docker-compose down/up)
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  pgdata:
+    driver: local
