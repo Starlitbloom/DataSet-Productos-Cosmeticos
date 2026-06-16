@@ -1,154 +1,98 @@
-"""
-main.py
+"""api.main
+===========
+Aplicación FastAPI principal del proyecto Sephora.
 
-Orquestador end-to-end para entrenamiento, optimización y evaluación de un
-modelo Gradient Boosting sobre el dataset Sephora.
+Expone los datos del data warehouse y resultados del modelo ML
+a través de una API REST documentada automáticamente en /docs.
 
-Pipeline actualizado:
-- Usa preprocesamiento modular (sin CSV intermedio)
-- Usa Gradient Boosting + tuning
-- Evalúa y guarda resultados automáticamente
+Uso local
+---------
+    uvicorn api.main:app --reload
+
+Endpoints disponibles
+---------------------
+    GET /products              — lista de productos con filtros
+    GET /products/{id}         — detalle de un producto
+    GET /reviews               — reseñas con filtros
+    GET /metrics/model         — métricas del modelo ML
+    GET /clusters              — resumen de clusters KMeans
+    GET /exchange-rate         — último tipo de cambio USD→CLP
 """
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any, Dict
 
-import joblib
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
-# =========================
-# PATHS CENTRALIZADOS
-# =========================
-from src.paths import PROJECT_ROOT, RESULTS_DIR, TRAINED_MODELS_DIR
+from api.database import get_db, check_connection
+from api.models import ExchangeRate
+from api.routers import products, reviews, metrics, clusters
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
-# =========================
-# IMPORTS PIPELINE
-# =========================
-from src.data_preprocessing import run_preprocessing_pipeline
-from src.hyperparameter_tuning import optimize_gradient_boosting
-from src.model_evaluation import (
-    evaluate_and_save_metrics,
-    save_classification_report,
-    plot_and_save_confusion_matrix,
-    plot_and_save_roc_curve,
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("api.main")
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
+app = FastAPI(
+    title="Sephora Intelligence API",
+    description=(
+        "API REST que expone productos, reseñas, métricas del modelo ML "
+        "y resultados de clustering del proyecto Sephora EP3."
+    ),
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
-# =========================================================
-# LOGGING
-# =========================================================
-def _setup_logger() -> logging.Logger:
-    logger = logging.getLogger("cosmetics_main")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
 
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
+app.include_router(products.router)
+app.include_router(reviews.router)
+app.include_router(metrics.router)
+app.include_router(clusters.router)
 
+# ---------------------------------------------------------------------------
+# Endpoints adicionales en main
+# ---------------------------------------------------------------------------
 
-def _phase(title: str, logger: logging.Logger) -> None:
-    sep = "=" * 50
-    logger.info(sep)
-    logger.info(title)
-    logger.info(sep)
-
-
-# =========================================================
-# PIPELINE
-# =========================================================
-def run_pipeline() -> None:
-    logger = _setup_logger()
-
-    root = PROJECT_ROOT
-
-    # =========================
-    # MODELOS OUTPUT
-    # =========================
-    models_dir = TRAINED_MODELS_DIR
-    models_dir.mkdir(parents=True, exist_ok=True)
-
-    # =========================
-    # SALIDAS (ESTABILIDAD)
-    # =========================
-    # Creamos explícitamente estructura de results desde el inicio para evitar
-    # confusiones si el proceso se detiene antes de evaluación.
-    (RESULTS_DIR / "metrics").mkdir(parents=True, exist_ok=True)
-    (RESULTS_DIR / "plots").mkdir(parents=True, exist_ok=True)
-    (RESULTS_DIR / "reports").mkdir(parents=True, exist_ok=True)
+@app.get("/", tags=["Health"], summary="Health check")
+def root():
+    """Verifica que la API está activa y con conexión a la base de datos."""
+    db_ok = check_connection()
+    return {
+        "status": "ok",
+        "database": "connected" if db_ok else "disconnected",
+        "docs": "/docs",
+    }
 
 
+@app.get(
+    "/exchange-rate",
+    response_model=ExchangeRate,
+    tags=["Exchange Rate"],
+    summary="Último tipo de cambio USD→CLP",
+)
+def get_exchange_rate(db: Session = Depends(get_db)):
+    """Retorna el último tipo de cambio USD→CLP cargado por el pipeline ETL.
 
-    model_name = "mejor_gradient_boosting"
-    model_output_path = models_dir / f"{model_name}.pkl"
+    Lanza **404** si no hay datos de tipo de cambio en la base.
+    """
+    row = db.execute(
+        text("SELECT * FROM exchange_rates ORDER BY loaded_at DESC LIMIT 1")
+    ).mappings().first()
 
+    if row is None:
+        raise HTTPException(status_code=404, detail="No hay datos de tipo de cambio.")
 
-    # =====================================================
-    # FASE 1: PREPROCESAMIENTO
-    # =====================================================
-    _phase("Fase 1: Preprocesamiento de datos", logger)
-
-    artifacts = run_preprocessing_pipeline(
-        raw_dir=str(root / "data" / "raw"),
-        processed_dir=str(root / "data" / "processed"),
-        target_col="is_recommended",
-    )
-
-    X_train = joblib.load(artifacts["X_train_processed"])
-    X_test = joblib.load(artifacts["X_test_processed"])
-    y_train = joblib.load(artifacts["y_train"])
-    y_test = joblib.load(artifacts["y_test"])
-
-    logger.info("Datos listos:")
-    logger.info("X_train: %s | X_test: %s", X_train.shape, X_test.shape)
-
-    # =====================================================
-    # FASE 2: OPTIMIZACIÓN
-    # =====================================================
-    _phase("Fase 2: Optimización Gradient Boosting", logger)
-
-    tuning_payload: Dict[str, Any] = optimize_gradient_boosting(X_train, y_train)
-
-    best_model = tuning_payload["best_model"]
-
-    logger.info("Mejores parámetros: %s", tuning_payload["best_params"])
-    logger.info("Mejor score CV: %s", tuning_payload["best_score"])
-
-    # =====================================================
-    # FASE 3: EVALUACIÓN
-    # =====================================================
-    _phase("Fase 3: Evaluación del modelo", logger)
-
-    logger.info("RESULTS DIR: %s", RESULTS_DIR)
-
-    metrics = evaluate_and_save_metrics(
-        model=best_model,
-        X_test=X_test,
-        y_test=y_test,
-        model_name=model_name
-    )
-
-    logger.info("Métricas finales: %s", metrics)
-
-    save_classification_report(best_model, X_test, y_test, model_name)
-    plot_and_save_confusion_matrix(best_model, X_test, y_test, model_name)
-    plot_and_save_roc_curve(best_model, X_test, y_test, model_name)
-
-    # =====================================================
-    # FASE 4: GUARDADO MODELO
-    # =====================================================
-    _phase("Fase 4: Guardado del modelo", logger)
-
-    joblib.dump(best_model, model_output_path, compress=3)
-    logger.info("Modelo guardado en: %s", model_output_path)
-
-    logger.info("\nPIPELINE COMPLETADO EXITOSAMENTE\n")
-
-
-# =========================================================
-if __name__ == "__main__":
-    run_pipeline()
+    return dict(row)

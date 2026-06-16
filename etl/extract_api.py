@@ -1,18 +1,17 @@
 """etl.extract_api
 ==================
-Extracción de sentimiento desde la API de HuggingFace Inference (Fuente 2: API REST).
+Extracción de sentimiento desde la API de Groq (Fuente 2: API REST).
 
-Toma una muestra de ``review_text`` y consulta el modelo de análisis de
-sentimiento ``cardiffnlp/twitter-roberta-base-sentiment-latest`` para obtener
-una etiqueta (positive / neutral / negative) y un score de confianza.
+Toma una muestra de ``review_text`` y consulta un modelo LLM de Groq para
+obtener una etiqueta (positive / neutral / negative) y un score de confianza.
 
 Justificación del modelo
 -------------------------
-- ``cardiffnlp/twitter-roberta-base-sentiment-latest`` está entrenado en texto
-  informal (tweets, reseñas), lo que lo hace más adecuado que modelos de texto
-  formal para reviews de cosméticos.
-- La API de HuggingFace Inference es gratuita con una cuenta registrada y
-  permite ~30.000 llamadas/mes con key gratuita.
+- Groq ofrece acceso gratuito a modelos como ``llama3-8b-8192``, optimizados
+  para inferencia rápida. Son adecuados para clasificación de sentimiento en
+  texto informal como reseñas de cosméticos.
+- La API de Groq es gratuita con una cuenta registrada y permite miles de
+  llamadas por día con key gratuita.
 
 Justificación de la muestra
 -----------------------------
@@ -21,17 +20,12 @@ Con ~1 millón de reseñas, enviarlo todo es inviable. Se toma una muestra
 estratificada de ``SAMPLE_SIZE`` reseñas (configurable en .env), suficiente
 para el análisis estadístico sentimiento↔is_recommended y para la presentación.
 
-En producción, esta etapa se reemplazaría por un modelo local con batching.
-
 Notas de implementación
 -----------------------
-- Se usa ``requests.Session`` con retry automático para manejar errores 503
-  (modelo cargando) que HuggingFace devuelve en el primer llamado.
-- Las llamadas se hacen de a una con pausa breve para respetar rate limits.
-- Los errores por reseña individual se registran y se marca el sentimiento
-  como ``"unknown"`` sin detener el pipeline.
-- El resultado se puede cachear en disco para no re-consultar la API en cada
-  corrida del ETL.
+- Se usa ``requests`` con manejo de errores por reseña individual.
+- Los errores se registran y se marca el sentimiento como ``"unknown"``
+  sin detener el pipeline.
+- El resultado se cachea en disco para no re-consultar la API en cada corrida.
 """
 
 from __future__ import annotations
@@ -42,12 +36,9 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 load_dotenv()
 
@@ -57,18 +48,15 @@ logger = logging.getLogger(__name__)
 # Configuración
 # ---------------------------------------------------------------------------
 
-HF_API_URL: str = (
-    "https://api-inference.huggingface.co/models/"
-    "cardiffnlp/twitter-roberta-base-sentiment-latest"
-)
-
-HF_API_KEY: str = os.getenv("HF_API_KEY", "")
+GROQ_API_URL: str = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama3-8b-8192")
 
 # Número de reseñas a analizar (configurable en .env)
 SAMPLE_SIZE: int = int(os.getenv("SENTIMENT_SAMPLE_SIZE", "500"))
 
 # Pausa entre llamadas en segundos (evitar rate limiting)
-REQUEST_DELAY: float = float(os.getenv("SENTIMENT_REQUEST_DELAY", "0.3"))
+REQUEST_DELAY: float = float(os.getenv("SENTIMENT_REQUEST_DELAY", "0.1"))
 
 # Timeout por llamada
 REQUEST_TIMEOUT: int = int(os.getenv("SENTIMENT_TIMEOUT", "30"))
@@ -76,96 +64,81 @@ REQUEST_TIMEOUT: int = int(os.getenv("SENTIMENT_TIMEOUT", "30"))
 # Ruta del caché local (evita re-consultar en corridas sucesivas)
 CACHE_PATH: Path = Path(os.getenv("SENTIMENT_CACHE_PATH", "data/processed/sentiment_cache.csv"))
 
-
-# Mapeo de etiquetas del modelo a nombres legibles
-LABEL_MAP: dict = {
-    "positive":  "positive",
-    "neutral":   "neutral",
-    "negative":  "negative",
-    # El modelo puede devolver etiquetas con mayúscula o con prefijo
-    "LABEL_0":   "negative",
-    "LABEL_1":   "neutral",
-    "LABEL_2":   "positive",
-}
+# Prompt del sistema para clasificación de sentimiento
+SYSTEM_PROMPT: str = (
+    "You are a sentiment classifier for cosmetic product reviews. "
+    "Classify the sentiment of the review as exactly one of: positive, neutral, negative. "
+    "Respond with ONLY a JSON object in this format: "
+    '{\"label\": \"positive\", \"score\": 0.95} '
+    "where score is your confidence between 0.0 and 1.0. "
+    "No explanation, no extra text, only the JSON."
+)
 
 
 # ---------------------------------------------------------------------------
-# Sesión HTTP con retry automático
+# Llamada individual a la API de Groq
 # ---------------------------------------------------------------------------
 
-def _build_session() -> requests.Session:
-    """Construye una sesión HTTP con retry automático.
-
-    HuggingFace devuelve 503 cuando el modelo está cargando (cold start).
-    El retry con backoff exponencial maneja esto automáticamente.
-    """
-    session = requests.Session()
-
-    retry = Retry(
-        total=5,
-        backoff_factor=2,          # espera 2, 4, 8, 16 segundos entre reintentos
-        status_forcelist=[503, 429, 500, 502, 504],
-        allowed_methods=["POST"],
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-
-    if HF_API_KEY:
-        session.headers.update({"Authorization": f"Bearer {HF_API_KEY}"})
-        logger.info("HuggingFace API key configurada.")
-    else:
-        logger.warning(
-            "HF_API_KEY no está configurada en .env. "
-            "Las llamadas pueden ser más lentas o limitadas."
-        )
-
-    return session
-
-
-# ---------------------------------------------------------------------------
-# Llamada individual a la API
-# ---------------------------------------------------------------------------
-
-def _get_sentiment_single(text: str, session: requests.Session) -> dict:
-    """Consulta el sentimiento de un texto individual.
+def _get_sentiment_single(text: str) -> dict:
+    """Consulta el sentimiento de un texto individual via Groq API.
 
     Parameters
     ----------
     text:
-        Texto de la reseña (se trunca a 512 caracteres para evitar errores).
-    session:
-        Sesión HTTP reutilizable.
+        Texto de la reseña (se trunca a 500 caracteres).
 
     Returns
     -------
     dict con claves ``label`` (str) y ``score`` (float).
     Devuelve ``{"label": "unknown", "score": 0.0}`` si la llamada falla.
     """
-    # Truncar a 512 caracteres — límite del tokenizer del modelo
-    text_truncated = str(text)[:512].strip()
+    text_truncated = str(text)[:500].strip()
 
     if not text_truncated:
         return {"label": "unknown", "score": 0.0}
 
+    if not GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY no configurada en .env.")
+        return {"label": "unknown", "score": 0.0}
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Review: {text_truncated}"},
+        ],
+        "max_tokens": 50,
+        "temperature": 0.0,
+    }
+
     try:
-        response = session.post(
-            HF_API_URL,
-            json={"inputs": text_truncated},
+        response = requests.post(
+            GROQ_API_URL,
+            headers=headers,
+            json=payload,
             timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
-        result = response.json()
+        data = response.json()
 
-        # HuggingFace devuelve [[{label, score}, ...]]
-        if isinstance(result, list) and len(result) > 0:
-            best = max(result[0], key=lambda x: x["score"])
-            label = LABEL_MAP.get(best["label"].lower(), best["label"].lower())
-            return {"label": label, "score": round(best["score"], 4)}
+        content = data["choices"][0]["message"]["content"].strip()
 
-        return {"label": "unknown", "score": 0.0}
+        # Parsear JSON de respuesta
+        import json
+        result = json.loads(content)
+        label = result.get("label", "unknown").lower()
+        if label not in ("positive", "neutral", "negative"):
+            label = "unknown"
+        score = float(result.get("score", 0.0))
+        return {"label": label, "score": round(score, 4)}
 
     except requests.exceptions.Timeout:
-        logger.warning("Timeout al analizar reseña (truncada a 50 chars): %s...", text_truncated[:50])
+        logger.warning("Timeout al analizar reseña: %s...", text_truncated[:50])
         return {"label": "unknown", "score": 0.0}
     except Exception as exc:
         logger.warning("Error al analizar reseña: %s", exc)
@@ -181,7 +154,7 @@ def extract_sentiment(
     sample_size: Optional[int] = None,
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Analiza el sentimiento de una muestra de reseñas via HuggingFace API.
+    """Analiza el sentimiento de una muestra de reseñas via Groq API.
 
     Parameters
     ----------
@@ -202,8 +175,8 @@ def extract_sentiment(
         ``is_recommended``, ``sentiment``, ``sentiment_score``.
     """
     n = sample_size or SAMPLE_SIZE
-    logger.info("=== EXTRACT (API HuggingFace) — inicio ===")
-    logger.info("Modelo: cardiffnlp/twitter-roberta-base-sentiment-latest")
+    logger.info("=== EXTRACT (API Groq) — inicio ===")
+    logger.info("Modelo: %s", GROQ_MODEL)
     logger.info("Muestra objetivo: %d reseñas", n)
 
     # Validar columnas necesarias
@@ -218,11 +191,9 @@ def extract_sentiment(
 
     # Muestra estratificada por is_recommended para representatividad
     try:
+        df_valid["is_recommended"] = df_valid["is_recommended"].fillna(0).astype(int)
         df_sample = df_valid.groupby("is_recommended", group_keys=False).apply(
-            lambda x: x.sample(
-                min(len(x), n // 2),
-                random_state=42,
-            )
+            lambda x: x.sample(min(len(x), n // 2), random_state=42)
         ).reset_index(drop=True)
     except Exception:
         df_sample = df_valid.sample(min(len(df_valid), n), random_state=42).reset_index(drop=True)
@@ -251,15 +222,14 @@ def extract_sentiment(
     )
 
     # Consultar la API
-    session = _build_session()
     new_rows: list = []
 
     for i, row in df_to_analyze.iterrows():
-        result = _get_sentiment_single(row["review_text"], session)
+        result = _get_sentiment_single(row["review_text"])
         new_rows.append({
-            "author_id":       row["author_id"],
-            "review_text":     row["review_text"],
-            "is_recommended":  row["is_recommended"],
+            "author_id":       row.get("author_id"),
+            "review_text":     row.get("review_text"),
+            "is_recommended":  row.get("is_recommended", 0),
             "sentiment":       result["label"],
             "sentiment_score": result["score"],
         })
@@ -273,6 +243,12 @@ def extract_sentiment(
     all_rows = cache_rows + new_rows
     df_result = pd.DataFrame(all_rows)
 
+    # Garantizar columnas mínimas aunque todo haya fallado
+    expected_cols = ["author_id", "review_text", "is_recommended", "sentiment", "sentiment_score"]
+    for col in expected_cols:
+        if col not in df_result.columns:
+            df_result[col] = None
+
     # Guardar caché actualizado
     if use_cache and new_rows:
         CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -280,17 +256,16 @@ def extract_sentiment(
         logger.info("Caché actualizado: %d entradas totales en %s", len(df_result), CACHE_PATH)
 
     # Resumen estadístico
-    if "sentiment" in df_result.columns:
+    if "sentiment" in df_result.columns and not df_result.empty:
         dist = df_result["sentiment"].value_counts()
         logger.info("Distribución de sentimiento: %s", dist.to_dict())
 
-        # Análisis sentimiento vs is_recommended
         if "is_recommended" in df_result.columns:
             cross = df_result.groupby("sentiment")["is_recommended"].mean().round(3)
             logger.info("Tasa de recomendación por sentimiento:\n%s", cross.to_string())
 
     logger.info(
-        "=== EXTRACT (API HuggingFace) — completado: %d reseñas analizadas ===",
+        "=== EXTRACT (API Groq) — completado: %d reseñas analizadas ===",
         len(df_result),
     )
 
@@ -342,9 +317,6 @@ def extract_exchange_rate() -> dict:
         response.raise_for_status()
         data = response.json()
 
-        # exchangerate-api.com responde con:
-        # {"result": "success", "conversion_rates": {"CLP": 948.5, ...},
-        #  "time_last_update_utc": "..."}
         if data.get("result") == "success":
             rate = float(data["conversion_rates"]["CLP"])
             exchange_date = data.get("time_last_update_utc", str(_date.today()))[:10]
