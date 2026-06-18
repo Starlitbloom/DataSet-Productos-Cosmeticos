@@ -88,6 +88,55 @@ button[kind="headerNoPadding"],
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 16px rgba(194,24,91,0.25) !important;
 }
+
+/* Monograma */
+.monogram {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.6rem;
+    font-style: italic;
+    color: #C2185B;
+    border: 1.5px solid #D4A55A;
+    border-radius: 50%;
+    width: 56px; height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 1rem;
+}
+
+/* Divider floral */
+.divider-floral {
+    display: flex; align-items: center; gap: 12px; margin: 1.2rem 0;
+}
+.divider-floral::before, .divider-floral::after {
+    content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #E0A0B8);
+}
+.divider-floral::after { background: linear-gradient(90deg, #E0A0B8, transparent); }
+.divider-floral span { color: #C2185B; font-size: 1rem; }
+
+/* Hover card con elevacion */
+.hover-card {
+    background: linear-gradient(145deg, #FFFFFF 0%, #FFFAFB 100%);
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 18px, rgba(212,165,90,0.03) 18px, rgba(212,165,90,0.03) 19px), linear-gradient(145deg, #FFFFFF 0%, #FFFAFB 100%);
+    border-radius: 4px;
+    padding: 2rem 2rem 1.5rem 2rem;
+    min-height: 260px;
+    margin-bottom: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+.hover-card::after {
+    content: '';
+    position: absolute; top: 0; right: 0;
+    width: 50px; height: 50px;
+    background: linear-gradient(135deg, transparent 50%, rgba(212,165,90,0.12) 50%);
+}
+.hover-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 32px rgba(194,24,91,0.14);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -181,17 +230,7 @@ cards = [
 for col, (key, page, num, color, bg, title, desc) in zip([col1, col2, col3], cards):
     with col:
         st.markdown(f"""
-        <div style='
-            background: {bg};
-            border-radius: 4px;
-            padding: 2rem 2rem 1.5rem 2rem;
-            border-top: 3px solid {color};
-            min-height: 260px;
-            margin-bottom: 0.5rem;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        '>
+        <div class='hover-card' style='border-top: 3px solid {color}; background: {bg};'>
             <div>
                 <p style='font-size: 0.65rem; letter-spacing: 2px; text-transform: uppercase; color: {color}; margin-bottom: 0.8rem;'>{num}</p>
                 <h3 style='font-family: Cormorant Garamond, serif; font-size: 1.9rem; font-weight: 300; color: #1A1A1A; margin-bottom: 0.8rem;'>{title}</h3>

@@ -111,9 +111,14 @@ class ExchangeRate(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ModelMetric(BaseModel):
-    model_name:   Optional[str]   = None
-    f1_test:      Optional[float] = None
-    f1_cv_grid:   Optional[float] = None
-    f1_cv_random: Optional[float] = None
+    model_name:        Optional[str]   = None
+    n_estimators:      Optional[int]   = None
+    max_depth:         Optional[int]   = None
+    learning_rate:     Optional[float] = None
+    random_state:      Optional[int]   = None
+    silhouette_score:  Optional[float] = None
+    best_k:            Optional[int]   = None
+    final_inertia:     Optional[float] = None
+    pca_variance_2d:   Optional[float] = None
 
     model_config = {"from_attributes": True}

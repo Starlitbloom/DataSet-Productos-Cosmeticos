@@ -26,7 +26,7 @@ def get_reviews(
     product_id: Optional[str] = Query(None, description="Filtrar por product_id"),
     min_rating: Optional[float] = Query(None, ge=1, le=5, description="Rating mínimo"),
     is_recommended: Optional[int] = Query(None, ge=0, le=1, description="1=recomendado, 0=no recomendado"),
-    limit: int  = Query(50, ge=1, le=500, description="Máximo de resultados"),
+    limit: int = Query(50, ge=1, le=5000, description="Máximo de resultados"),
     offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
     db: Session = Depends(get_db),
 ):
