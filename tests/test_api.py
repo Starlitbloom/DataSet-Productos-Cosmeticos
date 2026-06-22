@@ -220,7 +220,7 @@ def test_get_clusters_has_best(client):
 
 
 # ---------------------------------------------------------------------------
-# GET /exchange-rate.
+# GET /exchange-rate
 # ---------------------------------------------------------------------------
 
 def test_get_exchange_rate_ok(client):
