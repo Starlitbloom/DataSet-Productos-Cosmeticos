@@ -133,4 +133,4 @@ Los resultados se guardan automáticamente en:
 
 ## Autores
 
-Proyecto desarrollado para la asignatura **SCY1101 — Programación para la Ciencia de Datos**, Evaluación Parcial N°2, DuocUC 2025.
+Proyecto desarrollado para la asignatura **SCY1101 — Programación para la Ciencia de Datos**, Evaluación Parcial N°2, DuocUC 2026.
