@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from api.database import get_db
 from api.models import Review
+
+from api.models import SentimentSummaryResponse
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
 
@@ -61,4 +63,28 @@ def get_reviews(
     )
 
     rows = db.execute(query, params).mappings().all()
+    return [dict(r) for r in rows]
+
+@router.get("/sentiment/summary", 
+            response_model=List[SentimentSummaryResponse],
+            tags=["Sentimiento"],
+            summary="Resumen sentimiento vs recomendación")
+def get_sentiment_summary(db: Session = Depends(get_db)):
+    """Análisis sentimiento ↔ is_recommended desde HuggingFace API."""
+    try:
+        rows = db.execute(text("""
+            SELECT sentiment,
+                   COUNT(*) AS total_reviews,
+                   ROUND(AVG(is_recommended) * 100, 2) AS pct_recommended,
+                   ROUND(AVG(sentiment_score)::numeric, 4) AS avg_sentiment_score
+            FROM sentiment_results
+            WHERE sentiment != 'unknown'
+            GROUP BY sentiment
+            ORDER BY pct_recommended DESC
+        """)).mappings().all()
+    except Exception:
+        raise HTTPException(status_code=404, 
+            detail="Tabla sentiment_results no disponible.")
+    if not rows:
+        raise HTTPException(status_code=404, detail="Sin datos de sentimiento.")
     return [dict(r) for r in rows]

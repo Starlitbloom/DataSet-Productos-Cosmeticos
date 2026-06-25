@@ -122,3 +122,12 @@ class ModelMetric(BaseModel):
     pca_variance_2d:   Optional[float] = None
 
     model_config = {"from_attributes": True}
+
+class SentimentSummaryResponse(BaseModel):
+    """Resumen del análisis de sentimiento vs recomendación."""
+    sentiment:           str
+    total_reviews:       int
+    pct_recommended:     float
+    avg_sentiment_score: float
+
+    model_config = {"from_attributes": True}

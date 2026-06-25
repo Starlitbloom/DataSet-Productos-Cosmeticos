@@ -1,136 +1,180 @@
-# Proyecto de Modelado — Sephora Cosmetics Reviews
+# 🌸 Sephora Intelligence
 
-Solución de machine learning para predecir si un usuario recomendará un producto cosmético (`is_recommended`), integrando modelos supervisados, aprendizaje no supervisado, evaluación comparativa y optimización de hiperparámetros.
+Pipeline ETL end-to-end con análisis de Machine Learning, API REST y dashboard interactivo sobre el dataset público de reseñas de productos cosméticos de Sephora US.
 
----
+## Descripción
 
-## Estructura del Proyecto
+Este proyecto integra **4 fuentes de datos**, aplica modelos de ML entrenados en EP2, y expone los resultados a través de una API REST documentada y un dashboard interactivo con 3 vistas diferenciadas por audiencia.
+
+| Componente | Tecnología |
+|---|---|
+| Pipeline ETL | Python, pandas, SQLAlchemy, pandera |
+| Base de datos | PostgreSQL 16 (Docker) |
+| API REST | FastAPI + uvicorn |
+| Dashboard | Streamlit + Plotly |
+| Containerización | Docker + Docker Compose |
+| Testing | pytest (51 tests) |
+
+## Estructura del proyecto
 
 ```
-proyecto_modelado/
-├── notebooks/
-│   ├── 01_exploratory_analysis.ipynb       # EDA, visualizaciones y detección de patrones
-│   ├── 02_supervised_modeling.ipynb        # Modelos supervisados con Scikit-learn
-│   ├── 02_unsupervised_learning.ipynb      # K-Means, PCA y análisis de clusters
-│   ├── 03_model_evaluation.ipynb           # Evaluación comparativa y métricas
-│   ├── 04_hyperparameter_optimization.ipynb# GridSearchCV y RandomizedSearchCV
-│   └── 05_final_analysis.ipynb             # Integración y análisis final
-├── src/
-│   ├── data_preprocessing.py               # Limpieza, transformación y pipeline de datos
-│   ├── model_training.py                   # Definición y entrenamiento de modelos
-│   ├── model_evaluation.py                 # Funciones de evaluación y comparación
-│   ├── hyperparameter_tuning.py            # GridSearchCV y RandomizedSearchCV
-│   ├── pipeline.py                         # Pipeline scikit-learn completo
-│   ├── transformers.py                     # Transformadores personalizados
-│   ├── paths.py                            # Rutas centralizadas del proyecto
-│   └── utils.py                            # Utilidades generales
+DataSet-Productos-Cosmeticos/
+├── api/                        # API REST FastAPI
+│   ├── main.py                 # App principal + health check
+│   ├── database.py             # Conexión SQLAlchemy
+│   ├── models.py               # Modelos Pydantic
+│   └── routers/                # Endpoints por recurso
+│       ├── products.py
+│       ├── reviews.py
+│       ├── metrics.py
+│       └── clusters.py
+├── dashboards/                 # Dashboard Streamlit
+│   ├── app.py                  # Página principal
+│   └── pages/
+│       ├── 1_vista_ejecutiva.py
+│       ├── 2_vista_tecnica.py
+│       └── 3_vista_operativa.py
 ├── data/
-│   ├── raw/                                # Datos originales sin modificar
-│   └── processed/                          # Artefactos preprocesados (.pkl)
-├── models/
-│   └── trained_models/                     # Modelos serializados con joblib
-├── results/
-│   ├── metrics/                            # Métricas en JSON y TXT
-│   ├── plots/                              # Gráficos generados
-│   └── reports/                            # Classification reports
-├── main.py                                 # Orquestador end-to-end
+│   ├── raw/                    # CSVs originales de Sephora
+│   └── processed/              # Artefactos procesados
+├── docker/                     # Containerización
+│   ├── docker-compose.yml
+│   ├── Dockerfile.api
+│   └── Dockerfile.dashboard
+├── docs/                       # Documentación técnica
+├── etl/                        # Pipeline ETL
+│   ├── extract_csv.py
+│   ├── extract_api.py          # HuggingFace + tipo de cambio
+│   ├── extract_db.py
+│   ├── transform.py
+│   ├── load.py
+│   ├── schemas.py
+│   └── pipeline.py
+├── models/trained_models/      # Modelos serializados de EP2
+├── notebooks/                  # Análisis y modelado EP2
+├── results/                    # Métricas y visualizaciones EP2
+├── src/                        # Módulos de preprocesamiento EP2
+├── tests/                      # Tests automatizados
+│   ├── conftest.py
+│   ├── test_etl.py             # 29 tests ETL
+│   └── test_api.py             # 22 tests API
+├── .env.example                # Plantilla de variables de entorno
+├── .gitignore
+├── requirements.txt
 └── README.md
 ```
 
----
+## Requisitos previos
 
-## Requisitos
+- Python 3.12+
+- Docker Desktop
+- Git
 
-- Python 3.10 o superior
-- Las dependencias se instalan con:
+## Instalación rápida
 
 ```bash
+# 1. Clonar el repositorio
+git clone https://github.com/tu-usuario/DataSet-Productos-Cosmeticos.git
+cd DataSet-Productos-Cosmeticos
+
+# 2. Crear entorno virtual e instalar dependencias
+python -m venv venv
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
+
+# 3. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales
+
+# 4. Levantar la base de datos
+cd docker
+docker compose up -d db
+cd ..
+
+# 5. Correr el pipeline ETL (carga inicial)
+python -m etl.pipeline --sample 10000
+
+# 6. Levantar la API
+uvicorn api.main:app --reload
+
+# 7. Levantar el dashboard (en otra terminal)
+streamlit run dashboards/app.py
 ```
 
-Dependencias principales:
-
-| Librería | Uso |
-|---|---|
-| `scikit-learn` | Modelos, pipelines, métricas, búsqueda de hiperparámetros |
-| `pandas` | Manipulación de datos |
-| `numpy` | Operaciones numéricas |
-| `matplotlib` / `seaborn` | Visualizaciones |
-| `joblib` | Serialización de modelos y paralelismo |
-| `jupyter` | Ejecución de notebooks |
-
----
-
-## Reproducibilidad
-
-Todos los experimentos usan `random_state=42`. Los artefactos de datos procesados se guardan en `data/processed/` y los modelos en `models/trained_models/`, de modo que cualquier notebook puede cargarse de forma independiente sin re-ejecutar etapas anteriores.
-
-Para garantizar resultados idénticos:
-1. Usar la misma versión de librerías.
-2. No modificar los archivos `.pkl` en `data/processed/`.
-3. Ejecutar los notebooks en orden numérico la primera vez.
-
----
-
-## Ejecución
-
-### Opción A — Pipeline completo desde terminal
-
-Ejecuta preprocesamiento, entrenamiento, optimización y evaluación en un solo paso:
+## Despliegue con Docker (completo)
 
 ```bash
-python main.py
+cd docker
+docker compose up --build -d
 ```
 
-### Opción B — Notebooks en orden
+Servicios disponibles:
+- **PostgreSQL**: `localhost:5432`
+- **API REST**: `http://localhost:8000` — Swagger en `/docs`
+- **Dashboard**: `http://localhost:8501`
 
-```bash
-jupyter notebook
-```
+## Fuentes de datos
 
-Ejecutar en el siguiente orden:
-
-1. `01_exploratory_analysis.ipynb`
-2. `02_supervised_modeling.ipynb` y `02_unsupervised_learning.ipynb` (independientes entre sí)
-3. `03_model_evaluation.ipynb`
-4. `04_hyperparameter_optimization.ipynb`
-5. `05_final_analysis.ipynb`
-
----
-
-## Modelos Implementados
-
-| Modelo | Tipo | Justificación |
+| # | Fuente | Descripción |
 |---|---|---|
-| Logistic Regression | Supervisado — baseline lineal | Interpretable, rápido; sirve como punto de referencia para cuantificar la ganancia de los modelos más complejos |
-| Random Forest | Supervisado — ensamble bagging | Robusto ante outliers, captura relaciones no lineales, expone importancia de variables |
-| Gradient Boosting | Supervisado — ensamble boosting | Mayor precisión en clasificación tabular; optimizado con GridSearchCV y RandomizedSearchCV |
-| K-Means | No supervisado — clustering | Segmentación de productos/usuarios para análisis exploratorio |
-| PCA | No supervisado — reducción dimensional | Visualización de clusters y análisis de varianza explicada |
+| 1 | CSV local | `product_info.csv` + `reviews_*.csv` (~1M reseñas) |
+| 2 | HuggingFace API | Análisis de sentimiento (`cardiffnlp/twitter-roberta-base-sentiment-latest`) |
+| 3 | exchangerate-api.com | Tipo de cambio USD → CLP en tiempo real |
+| 4 | PostgreSQL | Data warehouse con tablas limpias y resultados del modelo |
 
----
+## Tests
 
-## Optimización de Hiperparámetros
+```bash
+# Tests ETL
+pytest tests/test_etl.py -v     # 29 tests
 
-Se implementaron dos estrategias en `src/hyperparameter_tuning.py`:
+# Tests API
+pytest tests/test_api.py -v     # 22 tests
 
-- **GridSearchCV**: búsqueda exhaustiva sobre un grid adaptativo (se reduce en datasets > 50.000 muestras para controlar el tiempo de cómputo).
-- **RandomizedSearchCV**: búsqueda aleatoria sobre un espacio más amplio, útil como exploración rápida o cuando el grid es demasiado grande.
+# Todos los tests
+pytest tests/ -v                # 51 tests
 
-Ambos métodos usan `scoring="f1_weighted"` y `cv=3`, y devuelven un diccionario uniforme con `best_model`, `best_params`, `best_score` y `cv_results` para facilitar la comparación.
+# Guardar reporte
+pytest tests/ -v > docs/reporte_pruebas.md
+```
 
----
+## API Endpoints
 
-## Resultados
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/` | Health check |
+| GET | `/products` | Lista de productos con filtros |
+| GET | `/products/{id}` | Producto por ID |
+| GET | `/reviews` | Reseñas con filtros |
+| GET | `/reviews/sentiment/summary` | Análisis sentimiento vs recomendación |
+| GET | `/metrics/model` | Métricas del modelo ML |
+| GET | `/clusters` | Resumen clusters K-Means |
+| GET | `/exchange-rate` | Tipo de cambio USD→CLP |
 
-Los resultados se guardan automáticamente en:
+Documentación interactiva: `http://localhost:8000/docs`
 
-- `results/metrics/` — métricas en formato JSON y TXT por modelo
-- `results/plots/` — matrices de confusión, curvas ROC y gráficos comparativos
-- `results/reports/` — classification reports detallados
+## Variables de entorno
 
----
+Ver `.env.example` para la lista completa. Las principales:
 
-## Autores
+```env
+POSTGRES_USER=sephora_user
+POSTGRES_PASSWORD=changeme_123
+POSTGRES_DB=sephora_dw
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+HF_API_KEY=hf_xxxxxxxxxxxx
+EXCHANGE_API_URL=https://v6.exchangerate-api.com/v6/TU_KEY/latest/USD
+```
 
-Proyecto desarrollado para la asignatura **SCY1101 — Programación para la Ciencia de Datos**, Evaluación Parcial N°2, DuocUC 2025.
+## Dependencias principales
+
+```
+fastapi, uvicorn, streamlit, plotly
+pandas, numpy, scikit-learn, joblib
+sqlalchemy, psycopg2-binary
+pandera, python-dotenv, requests
+pytest, httpx
+```
+
+Ver `requirements.txt` para la lista completa con versiones.

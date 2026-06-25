@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerfile.api — FastAPI + uvicorn
+#
+# Construye la imagen de la API REST del proyecto Sephora Intelligence.
+#
+# Uso:
+#   docker build -f docker/Dockerfile.api -t sephora-api .
+#   docker run -p 8000:8000 --env-file .env sephora-api
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Imagen base oficial de Python — slim reduce el tamaño significativamente
+FROM python:3.12-slim
+
+# Metadatos
+LABEL maintainer="Sephora Intelligence EP3"
+LABEL description="FastAPI REST API para el proyecto Sephora Intelligence"
+
+# Variables de entorno para Python
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Directorio de trabajo
+WORKDIR /app
+
+# Instalar dependencias del sistema:
+# - libpq-dev + gcc: necesarios para psycopg2
+# - curl:            necesario para el healthcheck del contenedor
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    gcc \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar solo requirements primero (aprovecha el cache de Docker)
+COPY requirements.txt .
+
+# Instalar dependencias de Python
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copiar el código fuente
+COPY api/ ./api/
+
+# Puerto que expone la API
+EXPOSE 8000
+
+# Comando de inicio
+# --host 0.0.0.0 necesario para que sea accesible desde fuera del contenedor
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
