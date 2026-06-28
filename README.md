@@ -180,4 +180,4 @@ pytest, httpx
 Ver `requirements.txt` para la lista completa con versiones.
 
 
-Proyecto desarrollado para la asignatura **SCY1101 — Programación para la Ciencia de Datos**, Evaluación Parcial N°2, DuocUC 2026.
+Proyecto desarrollado para la asignatura **SCY1101 — Programación para la Ciencia de Datos**, Evaluación Parcial N°3, DuocUC 2026.
