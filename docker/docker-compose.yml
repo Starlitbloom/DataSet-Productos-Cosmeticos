@@ -1,7 +1,7 @@
 services:
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Base de datos PostgreSQL (Fuente 4 del ETL y Data Warehouse)
+  # Base de datos PostgreSQL (Data Warehouse)
   # ─────────────────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
@@ -36,29 +36,32 @@ services:
     container_name: sephora_api
     restart: unless-stopped
 
-    # El .env debe estar en la RAÍZ del proyecto (un nivel arriba de docker/).
-    # Si tienes el .env dentro de docker/, muévelo a la raíz con:
-    #   mv docker/.env .env
     env_file: ../.env
 
     environment:
-      # Sobreescribir host para que apunte al contenedor db, no a localhost
       POSTGRES_HOST: db
+      # Raíz del proyecto dentro del contenedor (para que predict.py
+      # encuentre models/ y data/processed/preprocessor.pkl)
+      PROJECT_ROOT: /app
 
     ports:
       - "8000:8000"
+
+    volumes:
+      # Monta los modelos serializados de EP2 para POST /predict
+      - ../models:/app/models:ro
+      # Monta el preprocessor generado por EP2
+      - ../data/processed:/app/data/processed:ro
 
     depends_on:
       db:
         condition: service_healthy
 
     healthcheck:
-      # curl está instalado en el Dockerfile.api para que esto funcione
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 15s
       timeout: 10s
       retries: 5
-      # Aumentado a 40s: uvicorn necesita tiempo para arrancar en el contenedor
       start_period: 40s
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -74,7 +77,6 @@ services:
     env_file: ../.env
 
     environment:
-      # La API corre en el contenedor 'api', no en localhost
       API_BASE_URL: http://api:8000
 
     ports:

@@ -152,7 +152,9 @@ with st.sidebar:
 # API helpers
 # ---------------------------------------------------------------------------
 
-API_BASE = "http://localhost:8000"
+import os
+
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 @st.cache_data(ttl=300)
 def get_exchange_rate():
